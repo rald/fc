@@ -1,0 +1,6 @@
+project.md
+./include/vm.h
+./src/vm.c
+./src/main.c
+./asm/arkanoid.asm
+./config.toml
