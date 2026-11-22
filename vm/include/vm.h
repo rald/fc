@@ -35,6 +35,7 @@ enum {
 #define VM_INPUT_ADDR    0x4000u /* 32-bit bitmask of pressed buttons */
 #define VM_SYS_ADDR      0x4004u /* 32-bit system register (bit 0 = swap back->front & yield frame) */
 #define VM_RAM_ADDR      0x4010u /* General purpose RAM start */
+#define VM_FONT_ADDR     0x4400u /* 8x8 DOS BIOS Font (128 ASCII chars * 8 bytes = 1024 bytes) */
 #define VM_MEM_SIZE      0x6000u /* 24 KB total address space */
 
 /* Button Bitmasks */

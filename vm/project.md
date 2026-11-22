@@ -1,3 +1,30 @@
+``` title="./Makefile"
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c11 -O2 -Iinclude $(shell sdl2-config --cflags)
+LDFLAGS = $(shell sdl2-config --libs)
+
+BUILD_DIR = build
+TARGET = vm
+SRCS = src/main.c src/vm.c
+OBJS = $(patsubst src/%.c,$(BUILD_DIR)/src/%.o,$(SRCS))
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+
+$(BUILD_DIR)/%.o: %.c include/vm.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+run: $(TARGET)
+	./$(TARGET) asm/arkanoid.asm
+
+clean:
+	rm -rf $(BUILD_DIR) $(TARGET)
+
+.PHONY: all run clean
+```
 ```h title="./include/vm.h"
 #ifndef VM_H
 #define VM_H
@@ -36,6 +63,7 @@ enum {
 #define VM_INPUT_ADDR    0x4000u /* 32-bit bitmask of pressed buttons */
 #define VM_SYS_ADDR      0x4004u /* 32-bit system register (bit 0 = swap back->front & yield frame) */
 #define VM_RAM_ADDR      0x4010u /* General purpose RAM start */
+#define VM_FONT_ADDR     0x4400u /* 8x8 DOS BIOS Font (128 ASCII chars * 8 bytes = 1024 bytes) */
 #define VM_MEM_SIZE      0x6000u /* 24 KB total address space */
 
 /* Button Bitmasks */
@@ -476,6 +504,138 @@ static const uint32_t SWEETIE16_PALETTE[16] = {
     0xFF333C57u  /* 15: Dark Slate */
 };
 
+/* Standard IBM PC / DOS BIOS 8x8 Font (ASCII 0..127, MSB = leftmost pixel) */
+static const uint8_t DOS_FONT_8X8[128][8] = {
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, /* 0x00 */
+    {0x7E,0x81,0xA5,0x81,0xBD,0x99,0x81,0x7E}, /* 0x01 */
+    {0x7E,0xFF,0xDB,0xFF,0xC3,0xE7,0xFF,0x7E}, /* 0x02 */
+    {0x6C,0xFE,0xFE,0xFE,0x7C,0x38,0x10,0x00}, /* 0x03 (Heart) */
+    {0x10,0x38,0x7C,0xFE,0x7C,0x38,0x10,0x00}, /* 0x04 */
+    {0x38,0x7C,0x38,0xFE,0xFE,0x7C,0x38,0x7C}, /* 0x05 */
+    {0x10,0x10,0x38,0x7C,0xFE,0x7C,0x38,0x7C}, /* 0x06 */
+    {0x00,0x00,0x18,0x3C,0x3C,0x18,0x00,0x00}, /* 0x07 */
+    {0xFF,0xFF,0xE7,0xC3,0xC3,0xE7,0xFF,0xFF}, /* 0x08 */
+    {0x00,0x3C,0x66,0x42,0x42,0x66,0x3C,0x00}, /* 0x09 */
+    {0xFF,0xC3,0x99,0xBD,0xBD,0x99,0xC3,0xFF}, /* 0x0A */
+    {0x0F,0x07,0x0F,0x7D,0xCC,0xCC,0xCC,0x78}, /* 0x0B */
+    {0x3C,0x66,0x66,0x66,0x3C,0x18,0x7E,0x18}, /* 0x0C */
+    {0x3F,0x33,0x3F,0x30,0x30,0x70,0xF0,0xE0}, /* 0x0D */
+    {0x7F,0x63,0x7F,0x63,0x63,0x67,0xE6,0xC0}, /* 0x0E */
+    {0x99,0x5A,0x3C,0xE7,0xE7,0x3C,0x5A,0x99}, /* 0x0F */
+    {0x80,0xE0,0xF8,0xFE,0xF8,0xE0,0x80,0x00}, /* 0x10 */
+    {0x02,0x0E,0x3E,0xFE,0x3E,0x0E,0x02,0x00}, /* 0x11 */
+    {0x18,0x3C,0x7E,0x18,0x18,0x7E,0x3C,0x18}, /* 0x12 */
+    {0x66,0x66,0x66,0x66,0x66,0x00,0x66,0x66}, /* 0x13 */
+    {0x7F,0xDB,0xDB,0x7B,0x1B,0x1B,0x1B,0x00}, /* 0x14 */
+    {0x3E,0x63,0x38,0x6C,0x6C,0x38,0xCC,0x78}, /* 0x15 */
+    {0x00,0x00,0x00,0x00,0x7E,0x7E,0x7E,0x00}, /* 0x16 */
+    {0x18,0x3C,0x7E,0x18,0x7E,0x3C,0x18,0xFF}, /* 0x17 */
+    {0x18,0x3C,0x7E,0x18,0x18,0x18,0x18,0x00}, /* 0x18 */
+    {0x18,0x18,0x18,0x18,0x7E,0x3C,0x18,0x00}, /* 0x19 */
+    {0x00,0x18,0x0C,0xFE,0x0C,0x18,0x00,0x00}, /* 0x1A */
+    {0x00,0x30,0x60,0xFE,0x60,0x30,0x00,0x00}, /* 0x1B */
+    {0x00,0x00,0xC0,0xC0,0xC0,0xFE,0x00,0x00}, /* 0x1C */
+    {0x00,0x24,0x66,0xFF,0x66,0x24,0x00,0x00}, /* 0x1D */
+    {0x00,0x18,0x3C,0x7E,0xFF,0xFF,0x00,0x00}, /* 0x1E */
+    {0x00,0xFF,0xFF,0x7E,0x3C,0x18,0x00,0x00}, /* 0x1F */
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, /* 0x20 ' ' */
+    {0x18,0x3C,0x3C,0x18,0x18,0x00,0x18,0x00}, /* 0x21 '!' */
+    {0x6C,0x6C,0x6C,0x00,0x00,0x00,0x00,0x00}, /* 0x22 '"' */
+    {0x6C,0x6C,0xFE,0x6C,0xFE,0x6C,0x6C,0x00}, /* 0x23 '#' */
+    {0x18,0x7E,0xC0,0x7C,0x06,0xFC,0x18,0x00}, /* 0x24 '$' */
+    {0x00,0xC6,0xCC,0x18,0x30,0x66,0xC6,0x00}, /* 0x25 '%' */
+    {0x38,0x6C,0x38,0x76,0xDC,0xCC,0x76,0x00}, /* 0x26 '&' */
+    {0x30,0x30,0x60,0x00,0x00,0x00,0x00,0x00}, /* 0x27 ''' */
+    {0x18,0x30,0x60,0x60,0x60,0x30,0x18,0x00}, /* 0x28 '(' */
+    {0x60,0x30,0x18,0x18,0x18,0x30,0x60,0x00}, /* 0x29 ')' */
+    {0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00}, /* 0x2A '*' */
+    {0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00}, /* 0x2B '+' */
+    {0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x30}, /* 0x2C ',' */
+    {0x00,0x00,0x00,0x7E,0x00,0x00,0x00,0x00}, /* 0x2D '-' */
+    {0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00}, /* 0x2E '.' */
+    {0x06,0x0C,0x18,0x30,0x60,0xC0,0x80,0x00}, /* 0x2F '/' */
+    {0x7C,0xC6,0xCE,0xDE,0xF6,0xE6,0x7C,0x00}, /* 0x30 '0' */
+    {0x30,0x70,0x30,0x30,0x30,0x30,0xFC,0x00}, /* 0x31 '1' */
+    {0x78,0xCC,0x0C,0x38,0x60,0xCC,0xFC,0x00}, /* 0x32 '2' */
+    {0x78,0xCC,0x0C,0x38,0x0C,0xCC,0x78,0x00}, /* 0x33 '3' */
+    {0x1C,0x3C,0x6C,0xCC,0xFE,0x0C,0x1E,0x00}, /* 0x34 '4' */
+    {0xFC,0xC0,0xF8,0x0C,0x0C,0xCC,0x78,0x00}, /* 0x35 '5' */
+    {0x38,0x60,0xC0,0xF8,0xCC,0xCC,0x78,0x00}, /* 0x36 '6' */
+    {0xFC,0xCC,0x0C,0x18,0x30,0x30,0x30,0x00}, /* 0x37 '7' */
+    {0x78,0xCC,0xCC,0x78,0xCC,0xCC,0x78,0x00}, /* 0x38 '8' */
+    {0x78,0xCC,0xCC,0x7C,0x0C,0x18,0x70,0x00}, /* 0x39 '9' */
+    {0x00,0x18,0x18,0x00,0x00,0x18,0x18,0x00}, /* 0x3A ':' */
+    {0x00,0x18,0x18,0x00,0x00,0x18,0x18,0x30}, /* 0x3B ';' */
+    {0x18,0x30,0x60,0xC0,0x60,0x30,0x18,0x00}, /* 0x3C '<' */
+    {0x00,0x00,0x7E,0x00,0x7E,0x00,0x00,0x00}, /* 0x3D '=' */
+    {0x60,0x30,0x18,0x0C,0x18,0x30,0x60,0x00}, /* 0x3E '>' */
+    {0x3C,0x66,0x0C,0x18,0x18,0x00,0x18,0x00}, /* 0x3F '?' */
+    {0x7C,0xC6,0xDE,0xDE,0xDC,0xC0,0x7C,0x00}, /* 0x40 '@' */
+    {0x30,0x78,0xCC,0xCC,0xFC,0xCC,0xCC,0x00}, /* 0x41 'A' */
+    {0xFC,0x66,0x66,0x7C,0x66,0x66,0xFC,0x00}, /* 0x42 'B' */
+    {0x3C,0x66,0xC0,0xC0,0xC0,0x66,0x3C,0x00}, /* 0x43 'C' */
+    {0xF8,0x6C,0x66,0x66,0x66,0x6C,0xF8,0x00}, /* 0x44 'D' */
+    {0xFE,0x62,0x68,0x78,0x68,0x62,0xFE,0x00}, /* 0x45 'E' */
+    {0xFE,0x62,0x68,0x78,0x68,0x60,0xF0,0x00}, /* 0x46 'F' */
+    {0x3C,0x66,0xC0,0xC0,0xCE,0x66,0x3E,0x00}, /* 0x47 'G' */
+    {0xCC,0xCC,0xCC,0xFC,0xCC,0xCC,0xCC,0x00}, /* 0x48 'H' */
+    {0x78,0x30,0x30,0x30,0x30,0x30,0x78,0x00}, /* 0x49 'I' */
+    {0x1E,0x0C,0x0C,0x0C,0xCC,0xCC,0x78,0x00}, /* 0x4A 'J' */
+    {0xE6,0x66,0x6C,0x78,0x6C,0x66,0xE6,0x00}, /* 0x4B 'K' */
+    {0xF0,0x60,0x60,0x60,0x62,0x66,0xFE,0x00}, /* 0x4C 'L' */
+    {0xC6,0xEE,0xFE,0xFE,0xD6,0xC6,0xC6,0x00}, /* 0x4D 'M' */
+    {0xC6,0xE6,0xF6,0xDE,0xCE,0xC6,0xC6,0x00}, /* 0x4E 'N' */
+    {0x38,0x6C,0xC6,0xC6,0xC6,0x6C,0x38,0x00}, /* 0x4F 'O' */
+    {0xFC,0x66,0x66,0x7C,0x60,0x60,0xF0,0x00}, /* 0x50 'P' */
+    {0x78,0xCC,0xCC,0xCC,0xDC,0x78,0x1C,0x00}, /* 0x51 'Q' */
+    {0xFC,0x66,0x66,0x7C,0x6C,0x66,0xE6,0x00}, /* 0x52 'R' */
+    {0x78,0xCC,0xE0,0x70,0x1C,0xCC,0x78,0x00}, /* 0x53 'S' */
+    {0xFC,0xB4,0x30,0x30,0x30,0x30,0x78,0x00}, /* 0x54 'T' */
+    {0xCC,0xCC,0xCC,0xCC,0xCC,0xCC,0xFC,0x00}, /* 0x55 'U' */
+    {0xCC,0xCC,0xCC,0xCC,0xCC,0x78,0x30,0x00}, /* 0x56 'V' */
+    {0xC6,0xC6,0xC6,0xD6,0xFE,0xEE,0xC6,0x00}, /* 0x57 'W' */
+    {0xC6,0xC6,0x6C,0x38,0x6C,0xC6,0xC6,0x00}, /* 0x58 'X' */
+    {0xCC,0xCC,0xCC,0x78,0x30,0x30,0x78,0x00}, /* 0x59 'Y' */
+    {0xFE,0xC6,0x8C,0x18,0x32,0x66,0xFE,0x00}, /* 0x5A 'Z' */
+    {0x78,0x60,0x60,0x60,0x60,0x60,0x78,0x00}, /* 0x5B '[' */
+    {0xC0,0x60,0x30,0x18,0x0C,0x06,0x02,0x00}, /* 0x5C '\' */
+    {0x78,0x18,0x18,0x18,0x18,0x18,0x78,0x00}, /* 0x5D ']' */
+    {0x10,0x38,0x6C,0xC6,0x00,0x00,0x00,0x00}, /* 0x5E '^' */
+    {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF}, /* 0x5F '_' */
+    {0x30,0x30,0x18,0x00,0x00,0x00,0x00,0x00}, /* 0x60 '`' */
+    {0x00,0x00,0x78,0x0C,0x7C,0xCC,0x76,0x00}, /* 0x61 'a' */
+    {0xE0,0x60,0x60,0x7C,0x66,0x66,0xDC,0x00}, /* 0x62 'b' */
+    {0x00,0x00,0x78,0xCC,0xC0,0xCC,0x78,0x00}, /* 0x63 'c' */
+    {0x1C,0x0C,0x0C,0x7C,0xCC,0xCC,0x76,0x00}, /* 0x64 'd' */
+    {0x00,0x00,0x78,0xCC,0xFC,0xC0,0x78,0x00}, /* 0x65 'e' */
+    {0x38,0x6C,0x60,0xF0,0x60,0x60,0xF0,0x00}, /* 0x66 'f' */
+    {0x00,0x00,0x76,0xCC,0xCC,0x7C,0x0C,0xF8}, /* 0x67 'g' */
+    {0xE0,0x60,0x6C,0x76,0x66,0x66,0xE6,0x00}, /* 0x68 'h' */
+    {0x30,0x00,0x70,0x30,0x30,0x30,0x78,0x00}, /* 0x69 'i' */
+    {0x0C,0x00,0x0C,0x0C,0x0C,0xCC,0xCC,0x78}, /* 0x6A 'j' */
+    {0xE0,0x60,0x66,0x6C,0x78,0x6C,0xE6,0x00}, /* 0x6B 'k' */
+    {0x70,0x30,0x30,0x30,0x30,0x30,0x78,0x00}, /* 0x6C 'l' */
+    {0x00,0x00,0xCC,0xFE,0xFE,0xD6,0xC6,0x00}, /* 0x6D 'm' */
+    {0x00,0x00,0xF8,0xCC,0xCC,0xCC,0xCC,0x00}, /* 0x6E 'n' */
+    {0x00,0x00,0x78,0xCC,0xCC,0xCC,0x78,0x00}, /* 0x6F 'o' */
+    {0x00,0x00,0xDC,0x66,0x66,0x7C,0x60,0xF0}, /* 0x70 'p' */
+    {0x00,0x00,0x76,0xCC,0xCC,0x7C,0x0C,0x1E}, /* 0x71 'q' */
+    {0x00,0x00,0xDC,0x76,0x66,0x60,0xF0,0x00}, /* 0x72 'r' */
+    {0x00,0x00,0x7C,0xC0,0x78,0x0C,0xF8,0x00}, /* 0x73 's' */
+    {0x10,0x30,0x7C,0x30,0x30,0x34,0x18,0x00}, /* 0x74 't' */
+    {0x00,0x00,0xCC,0xCC,0xCC,0xCC,0x76,0x00}, /* 0x75 'u' */
+    {0x00,0x00,0xCC,0xCC,0xCC,0x78,0x30,0x00}, /* 0x76 'v' */
+    {0x00,0x00,0xC6,0xD6,0xFE,0xFE,0x6C,0x00}, /* 0x77 'w' */
+    {0x00,0x00,0xC6,0x6C,0x38,0x6C,0xC6,0x00}, /* 0x78 'x' */
+    {0x00,0x00,0xCC,0xCC,0xCC,0x7C,0x0C,0xF8}, /* 0x79 'y' */
+    {0x00,0x00,0xFC,0x98,0x30,0x64,0xFC,0x00}, /* 0x7A 'z' */
+    {0x1C,0x30,0x30,0xE0,0x30,0x30,0x1C,0x00}, /* 0x7B '{' */
+    {0x18,0x18,0x18,0x00,0x18,0x18,0x18,0x00}, /* 0x7C '|' */
+    {0xE0,0x30,0x30,0x1C,0x30,0x30,0xE0,0x00}, /* 0x7D '}' */
+    {0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00}, /* 0x7E '~' */
+    {0x00,0x10,0x38,0x6C,0xC6,0xC6,0xFE,0x00}  /* 0x7F */
+};
+
 static uint32_t poll_inputs(void) {
     const uint8_t *keys = SDL_GetKeyboardState(NULL);
     uint32_t mask = 0;
@@ -563,6 +723,11 @@ int main(int argc, char **argv) {
     uint8_t mem[VM_MEM_SIZE];
     memset(mem, 0, sizeof(mem));
 
+    /* Load 8x8 DOS BIOS Font into VM memory at VM_FONT_ADDR (0x4400) */
+    if (VM_FONT_ADDR + sizeof(DOS_FONT_8X8) <= VM_MEM_SIZE) {
+        memcpy(mem + VM_FONT_ADDR, DOS_FONT_8X8, sizeof(DOS_FONT_8X8));
+    }
+
     vm_env_t env;
     vm_env_init(&env, mem, sizeof(mem), 0, (int32_t)code_len, (int32_t)VM_MEM_SIZE);
 
@@ -624,24 +789,27 @@ int main(int argc, char **argv) {
 ```
 ```asm title="./asm/arkanoid.asm"
 ; ============================================================================
-; ARKANOID FOR 128x128 4BPP SWEETIE-16 VM
+; ARKANOID FOR 128x128 4BPP SWEETIE-16 VM (WITH 8x8 DOS FONT HUD & BANNERS)
 ; ============================================================================
 ; Memory Map:
-;   0x0000 .. 0x1FFF : 128x128 4bpp Framebuffer (8192 bytes, 64 bytes/row)
+;   0x0000 .. 0x1FFF : 128x128 4bpp Back Framebuffer (8192 bytes, 64 bytes/row)
+;   0x2000 .. 0x3FFF : 128x128 4bpp Front Framebuffer (8192 bytes)
 ;   0x4000           : Input register (32-bit bitmask)
 ;   0x4004           : System register (write 1 to yield frame to SDL2)
 ;   0x4010           : Game State Base (r13 points here)
 ;     [r13 + 0]  (0) : pad_x      (paddle left X, 4..100)
 ;     [r13 + 4]  (1) : ball_x     (ball X, 0..124)
-;     [r13 + 8]  (2) : ball_y     (ball Y, 0..124)
+;     [r13 + 8]  (2) : ball_y     (ball Y, 12..124)
 ;     [r13 + 12] (3) : ball_vx    (ball X velocity: -2, -1, 1, 2)
 ;     [r13 + 16] (4) : ball_vy    (ball Y velocity: -1, 1)
 ;     [r13 + 20] (5) : ball_stuck (1 = resting on paddle, 0 = active)
 ;     [r13 + 24] (6) : lives      (remaining lives, starts at 3)
 ;     [r13 + 28] (7) : bricks_left(active bricks count, starts at 32)
 ;     [r13 + 32] (8) : game_over  (0 = playing, 1 = lost, 2 = won)
+;     [r13 + 36] (9) : score      (player score, +10 per brick)
 ;   0x4040           : Brick Array Base (32 bricks: 4 rows x 8 cols, 4 bytes each)
 ;                      Value = Sweetie-16 color index (0 = destroyed)
+;   0x4400 .. 0x47FF : 8x8 DOS BIOS Font (128 ASCII chars x 8 bytes)
 ; ============================================================================
 
 init:
@@ -652,16 +820,16 @@ init:
     add  r13, r13, r0
 
 reset_game:
-    ; Initialize lives = 3, game_over = 0
+    ; Initialize lives = 3, game_over = 0, score = 0
     movi r0, 3
     st32 r0, r13, 6         ; lives = 3
     movi r0, 0
     st32 r0, r13, 8         ; game_over = 0
+    st32 r0, r13, 9         ; score = 0
 
-    ; Initialize 32 bricks (4 rows x 8 cols) at 0x2040
-    ; Brick base = r13 + 0x30 (0x2040)
+    ; Initialize 32 bricks (4 rows x 8 cols) at 0x4040
     movi r0, 0x30
-    add  r8, r13, r0        ; r8 = brick pointer
+    add  r8, r13, r0        ; r8 = brick pointer (0x4040)
     movi r9, 0              ; r9 = row (0..3)
     movi r10, 4             ; max rows
     movi r11, 8             ; cols per row
@@ -727,6 +895,7 @@ main_loop:
     jz   r0, skip_restart
     jmp  reset_game
 skip_restart:
+    jmp  render_frame
 
 handle_playing:
     ; --- Paddle Movement ---
@@ -808,8 +977,8 @@ check_wall_right:
     sub  r3, r5, r3         ; ball_vx = -ball_vx
 
 check_wall_top:
-    ; Top wall bounce (y < 4)
-    movi r5, 4
+    ; Top playfield ceiling bounce below 8x8 HUD (y < 12)
+    movi r5, 12
     cmplt r0, r2, r5
     jz   r0, check_bottom
     mov  r2, r5
@@ -903,7 +1072,7 @@ check_bricks:
     st32 r3, r13, 3
     st32 r4, r13, 4
 
-    ; Check brick grid: 4 rows (y = 14, 21, 28, 35; height = 5)
+    ; Check brick grid: 4 rows (y = 18, 25, 32, 39; height = 5)
     ;                   8 cols (x = 8 + col*14; width = 12)
     movi r0, 0x30
     add  r8, r13, r0        ; r8 = brick pointer
@@ -918,11 +1087,11 @@ bricks_done:
     jmp  render_frame
 brick_row_body:
 
-    ; brick_y = 14 + row * 7
+    ; brick_y = 18 + row * 7
     mov  r6, r9
     shl  r6, 3              ; row * 8
     sub  r6, r6, r9         ; row * 7
-    movi r5, 14
+    movi r5, 18
     add  r6, r6, r5         ; r6 = brick_y
 
     movi r10, 0             ; r10 = col (0..7)
@@ -978,6 +1147,12 @@ brick_col_loop:
     sub  r4, r5, r4
     st32 r4, r13, 4
 
+    ; Add 10 to score
+    ld32 r5, r13, 9
+    movi r0, 10
+    add  r5, r5, r0
+    st32 r5, r13, 9
+
     ; Decrement bricks_left
     ld32 r5, r13, 7
     movi r0, 1
@@ -1023,45 +1198,133 @@ clear_loop:
     jmp   clear_loop
 
 draw_borders:
-    ; Top border (x=0..127, y=0..2, color=14 Light/Med Slate)
+    ; Playfield top line below 8x8 DOS HUD (x=0..127, y=10..11, color=14)
     movi r1, 0
-    movi r2, 0
+    movi r2, 10
     movi r3, 128
-    movi r4, 3
-    movi r5, 14
-    call fill_rect
-
-    ; Left border (x=0..2, y=0..127, color=14)
-    movi r1, 0
-    movi r2, 0
-    movi r3, 3
-    movi r4, 128
-    movi r5, 14
-    call fill_rect
-
-    ; Right border (x=125..127, y=0..127, color=14)
-    movi r1, 125
-    movi r2, 0
-    movi r3, 3
-    movi r4, 128
-    movi r5, 14
-    call fill_rect
-
-    ; Draw lives indicator in top-left border (y=0..1, 4px each, color=11 Cyan Ice)
-    ld32 r6, r13, 6         ; lives
-    movi r7, 6              ; start x = 6
-draw_lives_loop:
-    jz   r6, draw_bricks
-    mov  r1, r7
-    movi r2, 0
-    movi r3, 4
     movi r4, 2
-    movi r5, 11
+    movi r5, 14
     call fill_rect
-    movi r0, 6
-    add  r7, r7, r0
+
+    ; Left border (x=0..2, y=10..127, color=14)
+    movi r1, 0
+    movi r2, 10
+    movi r3, 3
+    movi r4, 118
+    movi r5, 14
+    call fill_rect
+
+    ; Right border (x=125..127, y=10..127, color=14)
+    movi r1, 125
+    movi r2, 10
+    movi r3, 3
+    movi r4, 118
+    movi r5, 14
+    call fill_rect
+
+draw_hud:
+    ; Top 8x8 DOS Font HUD (y=1): "SCORE:" + 3 digits on left, lives hearts on right
+    movi r1, 2
+    movi r2, 1
+    movi r3, 83             ; 'S'
+    movi r4, 12             ; Pure White
+    call draw_char_8x8
+
+    movi r1, 10
+    movi r2, 1
+    movi r3, 67             ; 'C'
+    movi r4, 12
+    call draw_char_8x8
+
+    movi r1, 18
+    movi r2, 1
+    movi r3, 79             ; 'O'
+    movi r4, 12
+    call draw_char_8x8
+
+    movi r1, 26
+    movi r2, 1
+    movi r3, 82             ; 'R'
+    movi r4, 12
+    call draw_char_8x8
+
+    movi r1, 34
+    movi r2, 1
+    movi r3, 69             ; 'E'
+    movi r4, 12
+    call draw_char_8x8
+
+    movi r1, 42
+    movi r2, 1
+    movi r3, 58             ; ':'
+    movi r4, 12
+    call draw_char_8x8
+
+    ; Render 3-digit score at x = 50, 58, 66 (color = 4 Warm Yellow)
+    ld32 r8, r13, 9         ; r8 = score (0..320)
+
+    ; Hundreds digit
+    movi r9, 0              ; hundreds count
+    movi r10, 100
+hud_hundreds_loop:
+    cmplt r0, r8, r10
+    jz    r0, hud_sub_100
+    jmp   hud_draw_100
+hud_sub_100:
+    sub   r8, r8, r10
+    movi  r0, 1
+    add   r9, r9, r0
+    jmp   hud_hundreds_loop
+hud_draw_100:
+    movi  r1, 50
+    movi  r2, 1
+    movi  r0, 48            ; '0'
+    add   r3, r9, r0
+    movi  r4, 4             ; Warm Yellow
+    call  draw_char_8x8
+
+    ; Tens digit
+    movi r9, 0              ; tens count
+    movi r10, 10
+hud_tens_loop:
+    cmplt r0, r8, r10
+    jz    r0, hud_sub_10
+    jmp   hud_draw_10
+hud_sub_10:
+    sub   r8, r8, r10
+    movi  r0, 1
+    add   r9, r9, r0
+    jmp   hud_tens_loop
+hud_draw_10:
+    movi  r1, 58
+    movi  r2, 1
+    movi  r0, 48            ; '0'
+    add   r3, r9, r0
+    movi  r4, 4             ; Warm Yellow
+    call  draw_char_8x8
+
+    ; Ones digit (remainder in r8)
+    movi  r1, 66
+    movi  r2, 1
+    movi  r0, 48            ; '0'
+    add   r3, r8, r0
+    movi  r4, 4             ; Warm Yellow
+    call  draw_char_8x8
+
+    ; Draw remaining lives using DOS 8x8 heart glyph (ASCII 0x03) on top-right
+    ld32 r8, r13, 6         ; lives (0..3)
+    movi r9, 102            ; start x = 102 (102, 110, 118)
+draw_lives_loop:
+    jz   r8, draw_bricks
+    mov  r1, r9
+    movi r2, 1
+    movi r3, 3              ; DOS Heart glyph (0x03)
+    movi r4, 2              ; Crimson Red
+    call draw_char_8x8
+    movi r0, 8
+    add  r9, r9, r0
     movi r0, 1
-    sub  r6, r6, r0
+    sub  r8, r8, r0
     jmp  draw_lives_loop
 
 draw_bricks:
@@ -1095,11 +1358,11 @@ render_b_col:
     movi r0, 8
     add  r1, r1, r0
 
-    ; r2 = y = 14 + row * 7
+    ; r2 = y = 18 + row * 7
     mov  r2, r9
     shl  r2, 3
     sub  r2, r2, r9
-    movi r0, 14
+    movi r0, 18
     add  r2, r2, r0
 
     movi r3, 12             ; width = 12
@@ -1145,7 +1408,7 @@ draw_entities:
     movi r5, 12
     call fill_rect
 
-    ; If game_over != 0, draw status banner in center
+    ; If game_over != 0, draw status text in center using 8x8 DOS font
     ld32 r0, r13, 8
     jz   r0, do_sync_frame
     jmp  prep_banner
@@ -1153,19 +1416,122 @@ do_sync_frame:
     jmp  sync_frame
 prep_banner:
 
-    ; Banner color: 2 (Crimson Red) if lost (1), 6 (Emerald Green) if won (2)
-    movi r5, 2
+    ; Check if lost (1) or won (2)
     movi r1, 1
-    cmplt r2, r1, r0        ; if 1 < game_over (i.e. game_over == 2)
-    jz   r2, draw_banner
-    movi r5, 6
+    cmplt r2, r1, r0        ; if 1 < game_over (game_over == 2 -> WON)
+    jz   r2, draw_lost_text
+    jmp  draw_won_text
 
-draw_banner:
-    movi r1, 32
+draw_lost_text:
+    ; Clear center strip for text readability
+    movi r1, 24
     movi r2, 56
-    movi r3, 64
+    movi r3, 80
     movi r4, 16
+    movi r5, 0
     call fill_rect
+
+    ; Draw "GAME OVER" (9 chars * 8px = 72px, centered at x=28, y=60, color=2 Red)
+    movi r1, 28
+    movi r2, 60
+    movi r3, 71             ; 'G'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 36
+    movi r2, 60
+    movi r3, 65             ; 'A'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 44
+    movi r2, 60
+    movi r3, 77             ; 'M'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 52
+    movi r2, 60
+    movi r3, 69             ; 'E'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 68
+    movi r2, 60
+    movi r3, 79             ; 'O'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 76
+    movi r2, 60
+    movi r3, 86             ; 'V'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 84
+    movi r2, 60
+    movi r3, 69             ; 'E'
+    movi r4, 2
+    call draw_char_8x8
+
+    movi r1, 92
+    movi r2, 60
+    movi r3, 82             ; 'R'
+    movi r4, 2
+    call draw_char_8x8
+    jmp  sync_frame
+
+draw_won_text:
+    ; Clear center strip for text readability
+    movi r1, 28
+    movi r2, 56
+    movi r3, 72
+    movi r4, 16
+    movi r5, 0
+    call fill_rect
+
+    ; Draw "YOU WIN!" (8 chars * 8px = 64px, centered at x=32, y=60, color=6 Emerald)
+    movi r1, 32
+    movi r2, 60
+    movi r3, 89             ; 'Y'
+    movi r4, 6
+    call draw_char_8x8
+
+    movi r1, 40
+    movi r2, 60
+    movi r3, 79             ; 'O'
+    movi r4, 6
+    call draw_char_8x8
+
+    movi r1, 48
+    movi r2, 60
+    movi r3, 85             ; 'U'
+    movi r4, 6
+    call draw_char_8x8
+
+    movi r1, 64
+    movi r2, 60
+    movi r3, 87             ; 'W'
+    movi r4, 6
+    call draw_char_8x8
+
+    movi r1, 72
+    movi r2, 60
+    movi r3, 73             ; 'I'
+    movi r4, 6
+    call draw_char_8x8
+
+    movi r1, 80
+    movi r2, 60
+    movi r3, 78             ; 'N'
+    movi r4, 6
+    call draw_char_8x8
+
+    movi r1, 88
+    movi r2, 60
+    movi r3, 33             ; '!'
+    movi r4, 6
+    call draw_char_8x8
 
 sync_frame:
     ; Write 1 to VM_SYS_ADDR (0x4004) to swap back->front & present frame
@@ -1174,6 +1540,173 @@ sync_frame:
     movi r0, 1
     st32 r0, r8, 1          ; mem32[0x4004] = 1
     jmp  main_loop
+
+; ============================================================================
+; SUBROUTINE: draw_char_8x8
+; Renders an 8x8 DOS BIOS glyph from 0x4400 + ascii*8 onto the framebuffer.
+; Inputs: r1 = x, r2 = y, r3 = ascii_code (0..127), r4 = color (0..15)
+; Clobbers: r0, r1, r2, r3, r4, r5, r6, r7
+; Preserves: r8, r9, r10, r11, r12, r13, r14, r15
+; ============================================================================
+draw_char_8x8:
+    movi r0, 24
+    sub  r15, r15, r0
+    st32 r8,  r15, 0
+    st32 r9,  r15, 1
+    st32 r10, r15, 2
+    st32 r11, r15, 3
+    st32 r12, r15, 4
+    st32 r14, r15, 5
+
+    mov  r8, r1             ; base_x
+    mov  r9, r2             ; base_y
+    mov  r12, r4            ; color
+
+    ; Compute glyph address = 0x4400 + (ascii_code & 0x7F) * 8
+    movi r0, 0x7F
+    and  r3, r3, r0
+    shl  r3, 3
+    movi r0, 0x44
+    shl  r0, 8              ; 0x4400
+    add  r10, r0, r3        ; r10 = glyph base byte address
+
+    movi r11, 0             ; r11 = row (0..7)
+dc_row_loop:
+    movi r0, 8
+    cmplt r0, r11, r0
+    jz   r0, dc_done
+
+    ; Read byte at (r10 + r11) via aligned 32-bit load
+    add  r6, r10, r11       ; byte_addr
+    movi r0, -4
+    and  r7, r6, r0         ; word_addr = byte_addr & ~3
+    ld32 r5, r7, 0          ; 32-bit word containing glyph row byte
+
+    movi r0, 3
+    and  r6, r6, r0         ; byte_offset (0..3)
+    shl  r6, 3              ; bit_shift = byte_offset * 8
+dc_shift_byte:
+    jz   r6, dc_byte_ready
+    shr  r5, 1
+    movi r0, 1
+    sub  r6, r6, r0
+    jmp  dc_shift_byte
+dc_byte_ready:
+    movi r0, 0xFF
+    and  r5, r5, r0         ; r5 = 8-bit row bitmap (bit 7 = left, bit 0 = right)
+
+    movi r6, 0              ; r6 = col (0..7)
+dc_col_loop:
+    movi r0, 8
+    cmplt r0, r6, r0
+    jz   r0, dc_next_row
+
+    ; Check bit (7 - col) in r5
+    movi r0, 7
+    sub  r7, r0, r6         ; shift amount = 7 - col
+    mov  r4, r5
+dc_bit_shift:
+    jz   r7, dc_bit_ready
+    shr  r4, 1
+    movi r0, 1
+    sub  r7, r7, r0
+    jmp  dc_bit_shift
+dc_bit_ready:
+    movi r0, 1
+    and  r4, r4, r0
+    jz   r4, dc_next_col    ; transparent background if bit == 0
+
+    ; Plot pixel at (base_x + col, base_y + row) with color r12
+    add  r1, r8, r6         ; px = base_x + col
+    add  r2, r9, r11        ; py = base_y + row
+
+    ; Bounds check 0 <= px < 128 and 0 <= py < 128
+    movi r0, 0
+    cmplt r0, r1, r0
+    jz   r0, dc_px_ok1
+    jmp  dc_next_col
+dc_px_ok1:
+    movi r0, 127
+    cmplt r0, r0, r1
+    jz   r0, dc_px_ok2
+    jmp  dc_next_col
+dc_px_ok2:
+    movi r0, 0
+    cmplt r0, r2, r0
+    jz   r0, dc_py_ok1
+    jmp  dc_next_col
+dc_py_ok1:
+    movi r0, 127
+    cmplt r0, r0, r2
+    jz   r0, dc_py_ok2
+    jmp  dc_next_col
+dc_py_ok2:
+    ; Compute byte_addr = (py * 64) + (px >> 1)
+    mov  r3, r2
+    shl  r3, 6
+    mov  r4, r1
+    shr  r4, 1
+    add  r3, r3, r4
+
+    movi r0, -4
+    and  r7, r3, r0         ; aligned word_addr
+
+    ; nibble bit shift = (byte_addr & 3) * 8 + (px & 1) * 4
+    movi r0, 3
+    and  r3, r3, r0
+    shl  r3, 3
+    movi r0, 1
+    and  r0, r1, r0
+    shl  r0, 2
+    add  r3, r3, r0         ; r3 = nibble bit shift (0..28)
+
+    movi r0, 0x0F
+    mov  r4, r3
+dc_mask_loop:
+    jz   r4, dc_mask_done
+    shl  r0, 1
+    movi r1, 1
+    sub  r4, r4, r1
+    jmp  dc_mask_loop
+dc_mask_done:
+    movi r1, -1
+    xor  r0, r0, r1         ; ~(0xF << shift)
+
+    movi r1, 0x0F
+    and  r1, r12, r1
+    mov  r4, r3
+dc_col_shift:
+    jz   r4, dc_col_done
+    shl  r1, 1
+    movi r2, 1
+    sub  r4, r4, r2
+    jmp  dc_col_shift
+dc_col_done:
+    ld32 r2, r7, 0
+    and  r2, r2, r0
+    or   r2, r2, r1
+    st32 r2, r7, 0
+
+dc_next_col:
+    movi r0, 1
+    add  r6, r6, r0
+    jmp  dc_col_loop
+
+dc_next_row:
+    movi r0, 1
+    add  r11, r11, r0
+    jmp  dc_row_loop
+
+dc_done:
+    ld32 r8,  r15, 0
+    ld32 r9,  r15, 1
+    ld32 r10, r15, 2
+    ld32 r11, r15, 3
+    ld32 r12, r15, 4
+    ld32 r14, r15, 5
+    movi r0, 24
+    add  r15, r15, r0
+    jr   r14
 
 ; ============================================================================
 ; SUBROUTINE: fill_rect
@@ -1301,9 +1834,4 @@ fr_done:
     movi r0, 20
     add  r15, r15, r0
     jr   r14
-```
-```toml title="./config.toml"
-[project]
-name = "VM"
-version = "0.1.0"
 ```
