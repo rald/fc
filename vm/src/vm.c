@@ -183,9 +183,11 @@ static char *trim(char *s) {
     return s;
 }
 
-int vm_assemble_file(const char *path, uint16_t *out_code, size_t max_code, size_t *out_len) {
-    FILE *fp = fopen(path, "r");
-    if (!fp) return -1;
+static int vm_assemble_stream(FILE *fp, uint16_t *out_code, size_t max_code, size_t *out_len) {
+    if (!fp || !out_code || !out_len) {
+        if (fp) fclose(fp);
+        return -1;
+    }
 
     asm_label_t labels[512];
     int label_count = 0;
@@ -351,4 +353,22 @@ int vm_assemble_file(const char *path, uint16_t *out_code, size_t max_code, size
     fclose(fp);
     *out_len = (size_t)pc;
     return 0;
+}
+
+int vm_assemble_file(const char *path, uint16_t *out_code, size_t max_code, size_t *out_len) {
+    FILE *fp = fopen(path, "r");
+    if (!fp) return -1;
+    return vm_assemble_stream(fp, out_code, max_code, out_len);
+}
+
+int vm_assemble_source(const char *source, uint16_t *out_code, size_t max_code, size_t *out_len) {
+    if (!source) return -1;
+    FILE *fp = tmpfile();
+    if (!fp) return -1;
+    size_t length = strlen(source);
+    if (fwrite(source, 1, length, fp) != length || fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return -1;
+    }
+    return vm_assemble_stream(fp, out_code, max_code, out_len);
 }

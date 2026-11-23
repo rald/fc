@@ -89,5 +89,6 @@ int32_t vm_run(const uint16_t *code, size_t code_len,
 
 /* Simple two-pass assembler for VM assembly files */
 int vm_assemble_file(const char *path, uint16_t *out_code, size_t max_code, size_t *out_len);
+int vm_assemble_source(const char *source, uint16_t *out_code, size_t max_code, size_t *out_len);
 
 #endif /* VM_H */
